@@ -25,4 +25,5 @@ test_benchmark*
 result_parser.py
 test*
 configs_test
-benchmark_results
+benchmark_resultsresults/
+results/

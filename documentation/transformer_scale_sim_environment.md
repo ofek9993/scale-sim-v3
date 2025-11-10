@@ -196,7 +196,51 @@ and *which hardware* to emulate.【F:scalesim/scale.py†L1-L53】
 
 ---
 
-## 8. Practical workflow for MNK transformer studies
+## 8. Worked example: GPT-2 attention walkthrough
+
+Bring the concepts together by replaying the shipped GPT-2 topology with the TPU-style
+`configs/google.cfg` array using the walkthrough script:
+
+```bash
+python3 scripts/gpt2_memory_walkthrough.py \
+  --layers QKT \
+  --matrix-rows 1 \
+  --matrix-cols 6 \
+  --trace-rows 1 \
+  --log documentation/gpt2_walkthrough_sample.md
+```
+
+The script narrates every phase while still streaming to the terminal (the `--log`
+flag just saves a copy for later study).【F:documentation/gpt2_memory_walkthrough.md†L34-L68】
+
+1. **CSV → model intuition.** Before touching the simulator, the script restates
+   the GPT-2 dimensions it extracts from `gpt2.csv`: sequence length 1024,
+   hidden size 1600, head dimension 64, 25 heads, and the 3072-wide MLP—all
+   derived directly from the MNK triples so you can confirm the CSV matches the
+   published model card.【F:documentation/gpt2_walkthrough_sample.md†L23-L78】
+2. **Address matrices.** For the QKT attention-score layer, the script prints the
+   first few IFMAP/FILTER/OFMAP addresses and decodes them into “token m,
+   feature k” or “output channel n” labels. This shows that SCALE-Sim is
+   manipulating addresses anchored at the IFMAP/FILTER/OFMAP offsets rather than
+   storing tensor values.【F:documentation/gpt2_walkthrough_sample.md†L83-L125】
+3. **CALC warm-up.** In ideal-bandwidth mode the IFMAP and FILTER buffers pull
+   wide bursts that complete well before compute cycle 0 (negative completion
+   timestamps). The array begins consuming one word per cycle once the double
+   buffer swaps active halves, so stall time remains zero and the idle window is
+   just the warm-up duration.【F:documentation/gpt2_walkthrough_sample.md†L127-L143】
+4. **USER warm-up.** Re-running with the 10-word/cycle interface stretches those
+   bursts, but the timeline still shows the same “array consumed” messages—the
+   compute core only starts once enough data has arrived. The slower prefetches
+   simply inflate the idle gap by ~95k cycles while compute time stays fixed at
+   9,183 cycles, illustrating how USER mode models realistic bandwidth without
+   changing the math.【F:documentation/gpt2_walkthrough_sample.md†L144-L163】
+
+Repeat without `--layers` to narrate the entire block (QKT, QKTV, packed QKV
+projection, projection back to the model dimension, and both MLP passes) or bump
+`--matrix-rows`/`--trace-rows` to inspect deeper portions of the operand windows
+and trace timelines.【F:documentation/gpt2_memory_walkthrough.md†L30-L79】
+
+## 9. Practical workflow for MNK transformer studies
 
 1. **Extract MNK values** from the target model’s configuration (batch size,
    sequence length, hidden size, intermediate size, number of heads). Fill a

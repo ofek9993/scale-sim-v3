@@ -1,3 +1,8 @@
 Layer,M,N,K,
 Toy_Q,8,8,8,
-
+Toy_K,8,8,8,
+Toy_V,8,8,8,
+Toy_AttnScores,16,4,4,
+Toy_AttnProj,8,8,8,
+Toy_MLP_Up,8,16,8,
+Toy_MLP_Down,8,8,16,

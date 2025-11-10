@@ -27,3 +27,4 @@ test*
 configs_test
 benchmark_resultsresults/
 results/
+venv/

@@ -468,6 +468,12 @@ def main() -> None:
         default="all",
         help="Comma-separated list of layer names (default: all layers in order).",
     )
+    parser.add_argument(
+        "--log",
+        type=Path,
+        default=None,
+        help="Optional path to tee the walkthrough output into a Markdown or log file.",
+    )
 
     args = parser.parse_args()
 
@@ -485,81 +491,109 @@ def main() -> None:
     layer_facts = derive_layer_facts(topo)
     gpt2_facts = derive_gpt2_facts(layer_facts)
 
-    describe_config(config, gpt2_facts)
-    describe_topology(layer_facts, gpt2_facts)
+    def run_walkthrough() -> None:
+        describe_config(config, gpt2_facts)
+        describe_topology(layer_facts, gpt2_facts)
 
-    layer_order = list(layer_facts.keys())
-    name_to_id = {name: idx for idx, name in enumerate(layer_order)}
+        layer_order = list(layer_facts.keys())
+        name_to_id = {name: idx for idx, name in enumerate(layer_order)}
 
-    names = layer_order
-    if args.layers.lower() != "all":
-        requested = [name.strip() for name in args.layers.split(",") if name.strip()]
-        missing = [name for name in requested if name not in layer_facts]
-        if missing:
-            raise ValueError(f"Unknown layers requested: {', '.join(missing)}")
-        names = requested
+        names = layer_order
+        if args.layers.lower() != "all":
+            requested = [name.strip() for name in args.layers.split(",") if name.strip()]
+            missing = [name for name in requested if name not in layer_facts]
+            if missing:
+                raise ValueError(f"Unknown layers requested: {', '.join(missing)}")
+            names = requested
 
-    for name in names:
-        layer_id = name_to_id[name]
-        print(f"=== Layer {layer_id}: {name} ===")
-        layer = single_layer_sim()
-        layer.set_params(
-            layer_id=layer_id,
-            config_obj=config,
-            topology_obj=topo,
-            layout_obj=layout,
-            verbose=False,
-        )
-        describe_operand_layout(layer)
-        print_operand_matrices_compact(layer, max_rows=args.matrix_rows, max_cols=args.matrix_cols)
-        sample_operand_addresses(layer)
-
-        print("-- CALC (ideal bandwidth) run --")
-        calc_stats, calc_dir = execute_layer(
-            args.config,
-            args.topology,
-            args.layout,
-            args.output / "calc_mode" / name,
-            layer_id,
-            use_user_bandwidth=False,
-        )
-        print_stats(calc_stats, "CALC")
-        for operand in ("IFMAP", "FILTER", "OFMAP"):
-            print(f"  {operand} SRAM timeline snippet:")
-            summarize_sram_activity(layer, calc_dir, operand, args.trace_rows)
-            print(f"  {operand} DRAM warm-up bursts:")
-            summarize_dram_activity(layer, calc_dir, operand, args.trace_rows, mode="CALC")
-
-        print("-- USER (configured bandwidth) run --")
-        user_stats, user_dir = execute_layer(
-            args.config,
-            args.topology,
-            args.layout,
-            args.output / "user_mode" / name,
-            layer_id,
-            use_user_bandwidth=True,
-        )
-        print_stats(user_stats, "USER")
-        for operand in ("IFMAP", "FILTER", "OFMAP"):
-            print(f"  {operand} SRAM timeline snippet:")
-            summarize_sram_activity(layer, user_dir, operand, args.trace_rows)
-            print(f"  {operand} DRAM warm-up bursts:")
-            summarize_dram_activity(layer, user_dir, operand, args.trace_rows, mode="USER")
-
-        total_calc, calc_compute, _, _, _, _ = calc_stats
-        total_user, user_compute, _, _, _, _ = user_stats
-        extra_idle = (total_user - user_compute) - (total_calc - calc_compute)
-        print(
-            textwrap.fill(
-                (
-                    f"Difference summary: compute time stays at {calc_compute:.0f} cycles, but USER mode introduces an"
-                    f" additional {extra_idle:.0f} warm-up/flush cycles because the configured bandwidth feeds the double"
-                    " buffers more slowly than the ideal CALC analysis."
-                ),
-                width=96,
+        for name in names:
+            layer_id = name_to_id[name]
+            print(f"=== Layer {layer_id}: {name} ===")
+            layer = single_layer_sim()
+            layer.set_params(
+                layer_id=layer_id,
+                config_obj=config,
+                topology_obj=topo,
+                layout_obj=layout,
+                verbose=False,
             )
-        )
-        print()
+            describe_operand_layout(layer)
+            print_operand_matrices_compact(layer, max_rows=args.matrix_rows, max_cols=args.matrix_cols)
+            sample_operand_addresses(layer)
+
+            print("-- CALC (ideal bandwidth) run --")
+            calc_stats, calc_dir = execute_layer(
+                args.config,
+                args.topology,
+                args.layout,
+                args.output / "calc_mode" / name,
+                layer_id,
+                use_user_bandwidth=False,
+            )
+            print_stats(calc_stats, "CALC")
+            for operand in ("IFMAP", "FILTER", "OFMAP"):
+                print(f"  {operand} SRAM timeline snippet:")
+                summarize_sram_activity(layer, calc_dir, operand, args.trace_rows)
+                print(f"  {operand} DRAM warm-up bursts:")
+                summarize_dram_activity(layer, calc_dir, operand, args.trace_rows, mode="CALC")
+
+            print("-- USER (configured bandwidth) run --")
+            user_stats, user_dir = execute_layer(
+                args.config,
+                args.topology,
+                args.layout,
+                args.output / "user_mode" / name,
+                layer_id,
+                use_user_bandwidth=True,
+            )
+            print_stats(user_stats, "USER")
+            for operand in ("IFMAP", "FILTER", "OFMAP"):
+                print(f"  {operand} SRAM timeline snippet:")
+                summarize_sram_activity(layer, user_dir, operand, args.trace_rows)
+                print(f"  {operand} DRAM warm-up bursts:")
+                summarize_dram_activity(layer, user_dir, operand, args.trace_rows, mode="USER")
+
+            total_calc, calc_compute, _, _, _, _ = calc_stats
+            total_user, user_compute, _, _, _, _ = user_stats
+            extra_idle = (total_user - user_compute) - (total_calc - calc_compute)
+            print(
+                textwrap.fill(
+                    (
+                        f"Difference summary: compute time stays at {calc_compute:.0f} cycles, but USER mode introduces an"
+                        f" additional {extra_idle:.0f} warm-up/flush cycles because the configured bandwidth feeds the double"
+                        " buffers more slowly than the ideal CALC analysis."
+                    ),
+                    width=96,
+                )
+            )
+            print()
+
+    if args.log:
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        with args.log.open("w", encoding="utf-8") as log_handle:
+            class Tee:
+                def __init__(self, *streams):
+                    self.streams = streams
+
+                def write(self, data: str) -> None:
+                    for stream in self.streams:
+                        stream.write(data)
+
+                def flush(self) -> None:
+                    for stream in self.streams:
+                        stream.flush()
+
+            tee = Tee(sys.stdout, log_handle)
+            original_stdout = sys.stdout
+            try:
+                sys.stdout = tee
+                print("# GPT-2 SCALE-Sim memory walkthrough")
+                print()
+                run_walkthrough()
+            finally:
+                sys.stdout = original_stdout
+    else:
+        run_walkthrough()
 
 
 if __name__ == "__main__":

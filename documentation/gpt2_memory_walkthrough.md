@@ -38,6 +38,12 @@ python3 scripts/gpt2_memory_walkthrough.py \
   --trace-rows 4
 ```
 
+Add `--log walkthrough.md` (or `.log`) to tee the narration into a file while still
+printing to the terminal. The script creates parent directories automatically and
+prefixes the log with a Markdown heading so you can drop it into notes or share it
+with teammates. See `documentation/gpt2_walkthrough_sample.md` for a short run that
+captures the attention-score layer end to end.
+
 ## Sample output excerpt (`--layers QKT --matrix-rows 1 --matrix-cols 6 --trace-rows 1`)
 
 ```
